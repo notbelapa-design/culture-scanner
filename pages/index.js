@@ -184,8 +184,12 @@ function MarketRow({ market, prevAttention, darkMode }) {
   const noBarWidth = hasProb
     ? `${Math.min(Math.max(noPrice * 100, 0), 100)}%`
     : '0%';
-  // Link to the underlying Polymarket page for reference.
-  const marketUrl = `https://polymarket.com/${slug}`;
+  // Link to the underlying Polymarket page for reference.  Polymarket
+  // hosts event pages at /event/{slug}.  Using this base path ensures
+  // users land on the correct market page (additional query params like
+  // `tid` will be handled by Polymarket internally).  See example
+  // https://polymarket.com/event/russia-x-ukraine-ceasefire-in-2025.
+  const marketUrl = `https://polymarket.com/event/${slug}`;
   // Flag large moves – any absolute daily change over 5% will trigger a badge.
   const isBigMove = Math.abs(priceChange) > 0.05;
   // Compute the change in attention compared to the previous refresh.  If
@@ -234,22 +238,29 @@ function MarketRow({ market, prevAttention, darkMode }) {
           </span>
         )}
       </div>
-      {/* Probability bar showing YES vs NO */}
+      {/* Probability bar.  For binary YES/NO markets we show the YES and NO
+          percentages.  For other market types (e.g. multi‑outcome or scalar),
+          there are no simple outcome prices, so we display a single
+          "Prob N/A" label and a muted bar to indicate that probabilities
+          aren’t relevant to the attention score. */}
       <div className="mb-2">
-        <div className="flex justify-between text-xs mb-0.5 text-gray-500">
-          <span>YES {yesPct}{hasProb ? '%' : ''}</span>
-          <span>NO {noPct}{hasProb ? '%' : ''}</span>
-        </div>
-        <div className="h-2 w-full rounded bg-gray-200 flex overflow-hidden">
-          {hasProb ? (
-            <>
+        {hasProb ? (
+          <>
+            <div className="flex justify-between text-xs mb-0.5 text-gray-500">
+              <span>YES {yesPct}%</span>
+              <span>NO {noPct}%</span>
+            </div>
+            <div className="h-2 w-full rounded bg-gray-200 flex overflow-hidden">
               <div className="bg-blue-500" style={{ width: yesBarWidth }} />
               <div className="bg-pink-500" style={{ width: noBarWidth }} />
-            </>
-          ) : (
-            <div className={darkMode ? 'bg-gray-700' : 'bg-gray-300'} style={{ width: '100%' }} />
-          )}
-        </div>
+            </div>
+          </>
+        ) : (
+          <div className="flex items-center text-xs text-gray-500 gap-2">
+            <span>Prob&nbsp;N/A</span>
+            <div className={darkMode ? 'bg-gray-700' : 'bg-gray-300'} style={{ width: '100%', height: '4px' }} />
+          </div>
+        )}
       </div>
       {/* Stats row */}
       <div className="flex text-xs gap-6">
