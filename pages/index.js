@@ -13,7 +13,8 @@ export default function Home() {
 
   // Fetch market data from the API route.  Refresh every 60 seconds.
   const { data, error, isLoading } = useSWR('/api/markets', fetcher, {
-    refreshInterval: 60_000,
+    // Refresh every 30 seconds so the UI reacts more quickly to changes.
+    refreshInterval: 30_000,
   });
 
   const handleSubmit = (e) => {
@@ -66,9 +67,10 @@ export default function Home() {
         <div className="text-gray-600">Loading markets…</div>
       )}
       {data && data.data && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        // Scrollable list of markets.  Each row animates if it has a big move.
+        <div className="space-y-4 max-h-[calc(100vh-260px)] overflow-y-auto pr-2">
           {data.data.map((market) => (
-            <MarketCard key={market.slug} market={market} />
+            <MarketRow key={market.slug} market={market} />
           ))}
         </div>
       )}
@@ -80,7 +82,7 @@ export default function Home() {
  * Display a single market card.  Shows the question, probabilities,
  * recent price change, volume and computed attention score.
  */
-function MarketCard({ market }) {
+function MarketRow({ market }) {
   // Pull out individual fields, including the slug so we can link to the source
   const {
     slug,
@@ -102,64 +104,58 @@ function MarketCard({ market }) {
   // slightly over 100%.
   const yesBarWidth = `${Math.min(Math.max(yesPrice * 100, 0), 100)}%`;
   const noBarWidth = `${Math.min(Math.max(noPrice * 100, 0), 100)}%`;
-  // Link to the underlying Polymarket page for reference.  Slugs map
-  // directly onto the URL path for each market on polymarket.com.
+  // Link to the underlying Polymarket page for reference.
   const marketUrl = `https://polymarket.com/${slug}`;
   // Flag large moves – any absolute daily change over 5% will trigger a badge.
   const isBigMove = Math.abs(priceChange) > 0.05;
   return (
-    <div className="bg-white rounded-xl shadow p-4 flex flex-col justify-between border border-gray-100">
-      {/* Header with question and big move badge */}
-      <div className="flex items-start justify-between mb-3">
-        <div className="flex items-center gap-3">
+    <div
+      className={`bg-white rounded-lg shadow p-3 border border-gray-100 transition-colors duration-500 ${
+        isBigMove ? 'animate-pulse' : ''
+      }`}
+    >
+      <div className="flex justify-between items-start mb-2">
+        <div className="flex items-start gap-3">
           {icon ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={icon}
               alt="market icon"
-              className="w-10 h-10 rounded-md object-cover"
+              className="w-8 h-8 rounded object-cover flex-shrink-0"
             />
           ) : (
-            <div className="w-10 h-10 bg-gray-200 rounded-md" />
+            <div className="w-8 h-8 bg-gray-200 rounded" />
           )}
           <a
             href={marketUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex-1"
+            className="font-medium text-sm md:text-base hover:underline"
           >
-            <h2 className="text-lg font-semibold leading-snug hover:underline">
-              {question}
-            </h2>
+            {question}
           </a>
         </div>
         {isBigMove && (
-          <span className="px-2 py-0.5 rounded bg-yellow-200 text-yellow-800 text-xs font-semibold">
+          <span className="ml-2 px-2 py-0.5 rounded bg-yellow-200 text-yellow-800 text-xs font-semibold whitespace-nowrap">
             Big move
           </span>
         )}
       </div>
       {/* Probability bar showing YES vs NO */}
-      <div className="mb-4">
-        <div className="flex justify-between text-xs mb-1 text-gray-500">
+      <div className="mb-2">
+        <div className="flex justify-between text-xs mb-0.5 text-gray-500">
           <span>YES {yesPct}%</span>
           <span>NO {noPct}%</span>
         </div>
         <div className="h-2 w-full rounded bg-gray-200 flex overflow-hidden">
-          <div
-            className="bg-blue-500"
-            style={{ width: yesBarWidth }}
-          />
-          <div
-            className="bg-pink-500"
-            style={{ width: noBarWidth }}
-          />
+          <div className="bg-blue-500" style={{ width: yesBarWidth }} />
+          <div className="bg-pink-500" style={{ width: noBarWidth }} />
         </div>
       </div>
-      {/* Stats section */}
-      <div className="grid grid-cols-3 gap-y-1 text-xs text-gray-600 mb-4">
+      {/* Stats row */}
+      <div className="flex text-xs text-gray-600 gap-6">
         <div className="flex flex-col">
-          <span className="uppercase text-gray-400">Volume</span>
+          <span className="uppercase text-gray-400">Vol</span>
           <span className="font-medium">${volume.toLocaleString()}</span>
         </div>
         <div className="flex flex-col">
