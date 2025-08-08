@@ -54,6 +54,10 @@ export default async function handler(req, res) {
         noPrice,
         volume,
         priceChange,
+        // Expose the one‑hour price change separately so the client can
+        // compute short‑term attention and volatility metrics.  Not all
+        // markets have this field, so default to 0 if undefined.
+        hourChange: toNumber(m.oneHourPriceChange ?? 0),
         attention,
         icon: m.icon || m.image || null,
       };
