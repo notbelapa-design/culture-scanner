@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import useSWR from 'swr';
 
 /**
@@ -11,11 +11,38 @@ export default function Home() {
   // Email state for the notification placeholder
   const [email, setEmail] = useState('');
 
-  // Fetch market data from the API route.  Refresh every 60 seconds.
+  // Toggle dark mode.  Traders often prefer dark terminals, so expose a
+  // button that flips between light and dark palettes.
+  const [darkMode, setDarkMode] = useState(false);
+
+  // Store previous market results so we can compute attention deltas on the
+  // client.  When new data arrives we update this map.  Keys are market
+  // slugs and values are the last attention scores.
+  const [prevData, setPrevData] = useState({});
+
+  // Timestamp of the last successful data fetch.  Displayed on the page to
+  // show when the numbers were last refreshed.
+  const [lastUpdated, setLastUpdated] = useState(null);
+
+  // Fetch market data from the API route.  Refresh more frequently to
+  // surface changes quickly.  Traders might want very fresh data, so we
+  // set the interval to 10 seconds by default.
   const { data, error, isLoading } = useSWR('/api/markets', fetcher, {
-    // Refresh every 30 seconds so the UI reacts more quickly to changes.
-    refreshInterval: 30_000,
+    refreshInterval: 10_000,
   });
+
+  // When new data arrives, record the time and update the prevData map.
+  useEffect(() => {
+    if (data && data.data) {
+      // Build a map of current attention scores keyed by slug
+      const current = {};
+      data.data.forEach((m) => {
+        current[m.slug] = m.attention;
+      });
+      setPrevData(current);
+      setLastUpdated(new Date());
+    }
+  }, [data]);
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -26,15 +53,48 @@ export default function Home() {
   };
 
   return (
-    <main className="min-h-screen bg-gray-100 p-6 font-sans">
-      <h1 className="text-3xl font-bold mb-2">Culture Scanner<span className="text-blue-600"> – Narrative Pulse</span></h1>
-      <p className="mb-6 text-gray-700 max-w-2xl">
-        A lightweight dashboard that surfaces the biggest swings in Polymarket prediction markets.
-        Instead of mimicking the trading interface, this tool focuses on the magnitude and
-        direction of moves. Large price jumps and volume spikes bubble to the top so you can
-        spot emerging narratives and sentiment shifts at a glance. Each question links back to
-        Polymarket for deeper exploration.
-      </p>
+    <main
+      className={
+        darkMode
+          ? 'min-h-screen bg-gray-900 text-gray-100 p-6 font-sans'
+          : 'min-h-screen bg-gray-100 text-gray-900 p-6 font-sans'
+      }
+    >
+      {/* Top bar: title, description, dark mode toggle and last updated */}
+      <div className="flex flex-col md:flex-row md:items-start md:justify-between">
+        <div className="mb-4 md:mb-0 md:pr-4 flex-1">
+          <h1 className="text-3xl font-bold mb-1">
+            Culture Scanner<span className="text-blue-500"> – Narrative Pulse</span>
+          </h1>
+          <p className={darkMode ? 'mb-2 text-gray-300 max-w-2xl' : 'mb-2 text-gray-700 max-w-2xl'}>
+            A lightweight dashboard that surfaces the biggest swings in Polymarket prediction
+            markets. Instead of mimicking the trading interface, this tool focuses on the
+            magnitude and direction of moves. Large price jumps and volume spikes bubble to
+            the top so you can spot emerging narratives and sentiment shifts at a glance. Each
+            question links back to Polymarket for deeper exploration.
+          </p>
+          {lastUpdated && (
+            <div className="text-xs italic text-gray-400">
+              Last updated: {lastUpdated.toLocaleTimeString()}
+            </div>
+          )}
+        </div>
+        {/* Top markets in the last hour */}
+        {data && data.data && (
+          <TopHourMarkets markets={data.data} darkMode={darkMode} />
+        )}
+      </div>
+
+      {/* Theme toggle */}
+      <div className="mb-4 flex items-center gap-2">
+        <button
+          onClick={() => setDarkMode(!darkMode)}
+          className="p-2 rounded-full border border-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700"
+        >
+          {darkMode ? '🌞' : '🌜'}
+        </button>
+        <span className="text-sm">{darkMode ? 'Light mode' : 'Dark mode'}</span>
+      </div>
       <form
         onSubmit={handleSubmit}
         className="mb-8 max-w-md flex gap-2 items-end"
@@ -67,10 +127,17 @@ export default function Home() {
         <div className="text-gray-600">Loading markets…</div>
       )}
       {data && data.data && (
-        // Scrollable list of markets.  Each row animates if it has a big move.
-        <div className="space-y-4 max-h-[calc(100vh-260px)] overflow-y-auto pr-2">
+        // Scrollable list of markets.  Each row receives the previous attention
+        // map so it can compute deltas and highlight moves.  We clamp the
+        // max height to keep the list contained within the viewport.
+        <div className="space-y-4 max-h-[calc(100vh-300px)] overflow-y-auto pr-2">
           {data.data.map((market) => (
-            <MarketRow key={market.slug} market={market} />
+            <MarketRow
+              key={market.slug}
+              market={market}
+              prevAttention={prevData[market.slug] ?? null}
+              darkMode={darkMode}
+            />
           ))}
         </div>
       )}
@@ -82,7 +149,7 @@ export default function Home() {
  * Display a single market card.  Shows the question, probabilities,
  * recent price change, volume and computed attention score.
  */
-function MarketRow({ market }) {
+function MarketRow({ market, prevAttention, darkMode }) {
   // Pull out individual fields, including the slug so we can link to the source
   const {
     slug,
@@ -108,11 +175,16 @@ function MarketRow({ market }) {
   const marketUrl = `https://polymarket.com/${slug}`;
   // Flag large moves – any absolute daily change over 5% will trigger a badge.
   const isBigMove = Math.abs(priceChange) > 0.05;
+  // Compute the change in attention compared to the previous refresh.  If
+  // prevAttention is null (e.g. first load) then delta is null.
+  const delta = typeof prevAttention === 'number' ? attention - prevAttention : null;
   return (
     <div
-      className={`bg-white rounded-lg shadow p-3 border border-gray-100 transition-colors duration-500 ${
-        isBigMove ? 'animate-pulse' : ''
-      }`}
+      className={
+        `${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'} rounded-lg shadow p-3 transition-colors duration-500 ${
+          isBigMove ? 'animate-pulse' : ''
+        }`
+      }
     >
       <div className="flex justify-between items-start mb-2">
         <div className="flex items-start gap-3">
@@ -153,28 +225,111 @@ function MarketRow({ market }) {
         </div>
       </div>
       {/* Stats row */}
-      <div className="flex text-xs text-gray-600 gap-6">
+      <div className="flex text-xs gap-6">
         <div className="flex flex-col">
-          <span className="uppercase text-gray-400">Vol</span>
+          <span className={darkMode ? 'uppercase text-gray-400' : 'uppercase text-gray-500'}>
+            Vol
+          </span>
           <span className="font-medium">${volume.toLocaleString()}</span>
         </div>
         <div className="flex flex-col">
-          <span className="uppercase text-gray-400">Change</span>
+          <span className={darkMode ? 'uppercase text-gray-400' : 'uppercase text-gray-500'}>
+            1d
+          </span>
           <span
             className={
               priceDir === 'up'
-                ? 'font-medium text-green-600'
-                : 'font-medium text-red-600'
+                ? 'font-medium text-green-500'
+                : 'font-medium text-red-500'
             }
           >
             {(priceChange * 100).toFixed(2)}%
           </span>
         </div>
         <div className="flex flex-col">
-          <span className="uppercase text-gray-400">Attention</span>
-          <span className="font-medium text-gray-800">{attention.toFixed(2)}</span>
+          <span className={darkMode ? 'uppercase text-gray-400' : 'uppercase text-gray-500'}>
+            Attention
+          </span>
+          <span className="font-medium">{attention.toFixed(2)}</span>
+        </div>
+        <div className="flex flex-col">
+          <span className={darkMode ? 'uppercase text-gray-400' : 'uppercase text-gray-500'}>
+            Δ
+          </span>
+          <span
+            className={
+              delta === null
+                ? 'font-medium'
+                : delta > 0
+                ? 'font-medium text-green-500'
+                : delta < 0
+                ? 'font-medium text-red-500'
+                : 'font-medium'
+            }
+          >
+            {delta === null || Math.abs(delta) < 0.01
+              ? '–'
+              : `${delta > 0 ? '↑' : '↓'}${Math.abs(delta).toFixed(2)}`}
+          </span>
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Display the top three markets ranked by short‑term attention (volume ×
+ * absolute one‑hour price change).  This sits in the header and gives a
+ * quick glance at what narratives are spiking right now.  Markets are
+ * sorted descending by the computed metric.  The component expects an
+ * array of market objects with `volume` and `hourChange` fields.
+ */
+function TopHourMarkets({ markets, darkMode }) {
+  // Compute an array of {market, score} pairs for hour attention
+  const scored = markets
+    .map((m) => {
+      const score = m.volume * Math.abs(m.hourChange ?? 0);
+      return { market: m, score };
+    })
+    .filter((x) => x.score > 0);
+  scored.sort((a, b) => b.score - a.score);
+  const top = scored.slice(0, 3);
+  if (top.length === 0) return null;
+  return (
+    <div
+      className={
+        darkMode
+          ? 'bg-gray-800 text-gray-100 p-3 rounded-lg border border-gray-700 w-full md:w-64'
+          : 'bg-white text-gray-800 p-3 rounded-lg border border-gray-200 w-full md:w-64'
+      }
+    >
+      <h2 className="text-sm font-semibold mb-2">Top Hour Movers</h2>
+      <ul className="space-y-1">
+        {top.map(({ market: m, score }) => {
+          const changePct = (m.hourChange * 100).toFixed(2);
+          return (
+            <li key={m.slug} className="text-xs flex justify-between items-center">
+              <span className="truncate w-40 mr-2">
+                <a
+                  href={`https://polymarket.com/${m.slug}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="hover:underline"
+                >
+                  {m.question}
+                </a>
+              </span>
+              <span
+                className={
+                  m.hourChange >= 0 ? 'text-green-500 font-medium' : 'text-red-500 font-medium'
+                }
+              >
+                {changePct}%
+              </span>
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }
