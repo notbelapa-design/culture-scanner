@@ -78,6 +78,10 @@ export default function Home() {
               Last updated: {lastUpdated.toLocaleTimeString()}
             </div>
           )}
+          {/* Data source and refresh info */}
+          <div className="text-xs text-gray-400 mt-1">
+            Data sourced from Polymarket&#39;s Gamma API &nbsp;•&nbsp; Updates every 10&nbsp;seconds
+          </div>
         </div>
         {/* Top markets in the last hour */}
         {data && data.data && (
@@ -161,16 +165,25 @@ function MarketRow({ market, prevAttention, darkMode }) {
     attention,
     icon,
   } = market;
-  const yesPct = (yesPrice * 100).toFixed(1);
-  const noPct = (noPrice * 100).toFixed(1);
+  // Determine if we have valid probability data.  Some markets (e.g. scalar or
+  // multi‑outcome) may not provide outcomePrices for simple YES/NO events.  In
+  // those cases both yesPrice and noPrice will be zero.  When this happens we
+  // show “N/A” instead of 0% and render a muted bar.
+  const hasProb = yesPrice > 0 || noPrice > 0;
+  const yesPct = hasProb ? (yesPrice * 100).toFixed(1) : 'N/A';
+  const noPct = hasProb ? (noPrice * 100).toFixed(1) : 'N/A';
   // Determine the direction of the price move for coloring the change.
   const priceDir = priceChange >= 0 ? 'up' : 'down';
   // Compute bar widths for the probability bar.  Each portion is expressed as
   // a percentage string so Tailwind can apply inline styles.  We clamp the
   // values between 0 and 100 to avoid overflow if rounding errors push the sum
   // slightly over 100%.
-  const yesBarWidth = `${Math.min(Math.max(yesPrice * 100, 0), 100)}%`;
-  const noBarWidth = `${Math.min(Math.max(noPrice * 100, 0), 100)}%`;
+  const yesBarWidth = hasProb
+    ? `${Math.min(Math.max(yesPrice * 100, 0), 100)}%`
+    : '0%';
+  const noBarWidth = hasProb
+    ? `${Math.min(Math.max(noPrice * 100, 0), 100)}%`
+    : '0%';
   // Link to the underlying Polymarket page for reference.
   const marketUrl = `https://polymarket.com/${slug}`;
   // Flag large moves – any absolute daily change over 5% will trigger a badge.
@@ -178,10 +191,18 @@ function MarketRow({ market, prevAttention, darkMode }) {
   // Compute the change in attention compared to the previous refresh.  If
   // prevAttention is null (e.g. first load) then delta is null.
   const delta = typeof prevAttention === 'number' ? attention - prevAttention : null;
+
+  // Determine border highlight based on delta to draw the eye to movers.  Positive
+  // deltas get a green bar, negative deltas get red.  We set a small threshold
+  // so that very tiny changes don’t flash constantly.
+  let borderClass = '';
+  if (delta !== null && Math.abs(delta) > 1) {
+    borderClass = delta > 0 ? 'border-l-4 border-green-500' : 'border-l-4 border-red-500';
+  }
   return (
     <div
       className={
-        `${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'} rounded-lg shadow p-3 transition-colors duration-500 ${
+        `${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'} ${borderClass} rounded-lg shadow p-3 transition-colors duration-500 ${
           isBigMove ? 'animate-pulse' : ''
         }`
       }
@@ -216,12 +237,18 @@ function MarketRow({ market, prevAttention, darkMode }) {
       {/* Probability bar showing YES vs NO */}
       <div className="mb-2">
         <div className="flex justify-between text-xs mb-0.5 text-gray-500">
-          <span>YES {yesPct}%</span>
-          <span>NO {noPct}%</span>
+          <span>YES {yesPct}{hasProb ? '%' : ''}</span>
+          <span>NO {noPct}{hasProb ? '%' : ''}</span>
         </div>
         <div className="h-2 w-full rounded bg-gray-200 flex overflow-hidden">
-          <div className="bg-blue-500" style={{ width: yesBarWidth }} />
-          <div className="bg-pink-500" style={{ width: noBarWidth }} />
+          {hasProb ? (
+            <>
+              <div className="bg-blue-500" style={{ width: yesBarWidth }} />
+              <div className="bg-pink-500" style={{ width: noBarWidth }} />
+            </>
+          ) : (
+            <div className={darkMode ? 'bg-gray-700' : 'bg-gray-300'} style={{ width: '100%' }} />
+          )}
         </div>
       </div>
       {/* Stats row */}
