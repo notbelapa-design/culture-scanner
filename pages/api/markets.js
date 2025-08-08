@@ -18,7 +18,13 @@ function toNumber(value) {
 
 export default async function handler(req, res) {
   try {
-    const url = 'https://gamma-api.polymarket.com/markets';
+    // Limit results to currently tradeable markets.  The Gamma API
+    // supports filtering by active, closed and archived flags.  Only
+    // markets that are active (open for trading), not closed, and not
+    // archived will be returned.  This helps avoid showing stale
+    // questions from past years【155704338234089†L217-L267】.
+    const url =
+      'https://gamma-api.polymarket.com/markets?active=true&closed=false&archived=false';
     const response = await fetch(url, {
       headers: { 'Cache-Control': 'no-cache' },
     });
